@@ -1,5 +1,5 @@
 """
-    dynacof(;period::Array{String,1}= ["0000-01-01", "0000-01-02"], input_path="package",output_path= input_path, simulation_name="DynACof",
+    dynacof(;period::Array{String,1}= ["0000-01-01", "0000-01-02"], input_path="package",
              file_name= (constants= "constants.jl",site="site.jl",meteo="meteorology.txt",soil="soil.jl",coffee="coffee.jl",tree="tree.jl")
 
 # Dynamic Agroforestry Coffee Crop Model
@@ -13,9 +13,6 @@ carbon demand distribution along the year.
 - `period::Array{String,1}`: A vector of two character string as POSIX dates that correspond to the min and max dates for the desired time
 period to be returned. The default value ["0000-01-01", "0000-01-02"] makes the function take the min and max values from the meteorology file.
 - `input_path::String`: Path to the input parameter list folder. Default to `"package"`, wich makes DynACof use the package default parameter values.
-- `output_path::String`: Path pointing to the folder were the results will be written. Default to `""`, no writting. If the user need to writte on the 
-same path than in the input_path, output_path can be set to `output_path = input_path`.
-- `simulation_name::String`: Character name of the simulation file name when written (`write == true`). Default: `"DynACof"`.
 - `file_name::NamedTuple{(:constants, :site, :meteo, :soil, :coffee, :tree),NTuple{6,String}}`: A list of input file names :
 
     + **constants**: Physical constants file. Default: "constants.jl". More info in the corresponding structure: [`constants`](@ref).
@@ -39,6 +36,8 @@ Return a three objects Sim, Meteo and Parameters. To get the objects from a dyna
 | Type                         | Var                    | unit                | Definition                                                                          |
 |------------------------------|------------------------|---------------------|-------------------------------------------------------------------------------------|
 | General                      | Cycle                  | -                   | Plantation cycle ID                                                                 |
+|                              | date                   | Posix date (Y-m-d)  | Simulation date                                                                     |
+|                              | year                   | Year                | Simulation year                                                                     |
 |                              | Plot_Age               | year                | Plantation age (starting at 1)                                                      |
 |                              | Plot_Age_num           | year (numeric)      | Numeric age of plantation                                                           |
 |                              | LAIplot                | m2 leaves m-2 soil  | Plot (Coffee + Shade Tree if any) Leaf Area Index                                   |
@@ -59,8 +58,8 @@ Return a three objects Sim, Meteo and Parameters. To get the objects from a dyna
 |                              | Rn_Coffee              | MJ m-2 d-1          | Coffee net radiation                                                                |
 |                              | Rn_Soil                | MJ m-2 d-1          | Soil net radiation                                                                  |
 |                              | Rn_Soil_SW             | MJ m-2 d-1          | Soil net radiation computed using Shuttleworth & Wallace (1985) for reference       |
-|                              | LE_x                   | MJ m-2 d-1          | System / Coffee / Tree / Soil latent heat                                                 |
-|                              | H_x                    | MJ m-2 d-1          | System / Coffee / Tree / Soil sensible heat                                               |
+|                              | LE_x                   | MJ m-2 d-1          | System / Coffee / Tree / Soil latent heat                                           |
+|                              | H_x                    | MJ m-2 d-1          | System / Coffee / Tree / Soil sensible heat                                         |
 |                              | Q_Soil                 | MJ m-2 d-1          | Soil heat transport                                                                 |
 |                              | Transmittance_Tree     | fraction            | Fraction of light transmitted by the shade trees                                    |
 |                              | PAR_Trans_Tree         | MJ m-2 d-1          | Light transmitted by the shade trees canopy                                         |
@@ -71,8 +70,11 @@ Return a three objects Sim, Meteo and Parameters. To get the objects from a dyna
 |                              | APAR_Dif               | MJ m-2 d-1          | Absorbed diffuse PAR (Direct is APAR-APAR_Dif)                                      |
 |                              | lue                    | gC MJ               | Light use efficiency                                                                |
 |                              | Tleaf_Coffee           | deg C               | Coffee canopy temperature computed by DynACof                                       |
-|                              | WindSpeed_x            | m s-1               | Wind speed at the center of the layer                                               |
 |                              | TairCanopy_x           | deg C               | Air tempetature at the center of the layer                                          |
+|                              | Gb_h_x                 | m s-1               | Coffee / Tree conductance to heat                                                   |
+|                              | Gb_air_canopy          | m s-1               | Bulk (no tree) or canopy layer to canopy layer aerodynamic conductance              |
+|                              | air_density_x          | kg m-3              | Air density inside the canopy of the tree or the coffee (see [`air_density`](@ref)) |
+|                              | WindSpeed_x            | m s-1               | Wind speed at the center of the layer                                               |
 |                              | DegreeDays_Tcan        | deg C               | Growing degree days computed using Coffee Canopy Temperature                        |
 | Carbon                       | GPP                    | gC m-2 d-1          | Gross primary productivity                                                          |
 |                              | Consumption_RE         | gC m-2 d-1          | Daily reserve consumption                                                           |
@@ -107,6 +109,7 @@ Return a three objects Sim, Meteo and Parameters. To get the objects from a dyna
 |                              | Harvest_Maturity_Pot   | Fraction            | Daily average fruit maturity (0-1)                                                  |
 |                              | Date_harvest           | day of year         | date of harvest                                                                     |
 |                              | Harvest_Fruit          | gC m-2              | Total fruit carbon mass at harvest                                                  |
+|                              | Yield_green            | kg ha-1             | Yield of green coffee bean                                                          |
 |                              | Harvest_Maturity       | Fraction            | Average fruit maturity at harvest (0-1)                                             |
 |                              | Overriped_Fruit        | gC m-2 d-1          | Overriped fruits that fall onto the ground                                          |
 | Water                        | IntercMax              | mm                  | Maximum potential rainfall interception by canopy                                   |
@@ -192,7 +195,6 @@ rm(file)
 ```
 """
 function dynacof(;period::Array{String,1}= ["0000-01-01", "0000-01-02"], input_path="package",
-                 output_path= "", simulation_name="DynACof",
                  file_name= (constants= "constants.jl",site="site.jl",meteo="meteorology.txt",soil="soil.jl",
                              coffee="coffee.jl",tree="tree.jl"))
 
@@ -201,15 +203,15 @@ function dynacof(;period::Array{String,1}= ["0000-01-01", "0000-01-02"], input_p
     Meteo= meteorology(normpath(string(input_path,"/",file_name.meteo)), Parameters, period)
     # Setting up the simulation -----------------------------------------------
     # Number of cycles (rotations) to do over the period (given by the Meteo file):
-    
-    NCycles= ceil(Int64,(maximum(Meteo.year) - minimum(Meteo.year)) / Parameters.AgeCoffeeMax)
+    years= unique(Meteo.year)
 
+    NCycles= ceil(Int64,length(years) ./ Parameters.AgeCoffeeMax)
+    
     if NCycles==0
       error("Carefull, minimum allowed simulation length is one year")
     end
 
     # Setting up the simulation with each plantation rotation (cycle) and plantation age (Plot_Age) 
-    years= unique(Meteo.year)
     ndaysYear= zeros(Int64, length(years))
     for i in 1:length(years)
         ndaysYear[i]= nrow(Meteo[Meteo.year .== years[i],:])
@@ -217,7 +219,7 @@ function dynacof(;period::Array{String,1}= ["0000-01-01", "0000-01-02"], input_p
     # Variables are re-initialized from one to another cycle so each cycle is independant from the others -> mandatory for
     # parallel processing afterwards
 
-    cycle_year= repeat(1:NCycles, inner= Parameters.AgeCoffeeMax)[1:length(unique(Meteo.year))]
+    cycle_year= repeat(1:NCycles, inner= Parameters.AgeCoffeeMax)[1:length(years)]
     cycle_day= vcat(map((x,y) -> repeat([x],y),cycle_year,ndaysYear)...)
     age_year= (0:length(ndaysYear)-1) .% Parameters.AgeCoffeeMax .+ 1
     age_day= vcat(map((x,y) -> repeat([x],inner=y),age_year,ndaysYear)...)
@@ -247,13 +249,6 @@ function mainfun(cy,Direction,Meteo,Parameters)
   initialise!(Sim,Met_c,Parameters)
   bud_init_period!(Sim,Met_c,Parameters)
   
-  # Search for the species specific tree function:
-  if Parameters.Tree_Species == "No_Shade"
-    tree_model! = No_Shade
-  else
-    tree_model! = Shade_Tree
-  end
-
   Sim.ALS= ALS(Elevation= Parameters.Elevation, SlopeAzimut= Parameters.SlopeAzimut, Slope= Parameters.Slope, RowDistance= Parameters.RowDistance,
                Shade= Parameters.Shade, height_coffee= Parameters.Height_Coffee, Fertilization= Parameters.Fertilization,
                ShadeType= Parameters.ShadeType, CoffeePruning= Parameters.CoffeePruning, 
@@ -265,12 +260,18 @@ function mainfun(cy,Direction,Meteo,Parameters)
   for i in 1:length(Sim.LAI)
     next!(p)
     # Shade Tree computation if any
-    tree_model!(Sim,Parameters,Met_c,i)
+    if Sim.Stocking_Tree[i] > 0.0
+      tree_model!(Sim,Parameters,Met_c,i)
+    end
     # Should output at least APAR_Tree, LAI_Tree, T_Tree, Rn_Tree, H_Tree, LE_Tree (sum of transpiration + leaf evap)
     coffee_model!(Sim,Parameters,Met_c,i)
     soil_model!(Sim,Parameters,Met_c,i)
     balance_model!(Sim,Parameters,Met_c,i) # Energy balance
   end
+
+  Sim[!,:date] .= Met_c.Date
+  Sim[!,:year] .= Met_c.year
+  Sim[!,:Yield_green] .= Sim.Harvest_Fruit ./ 1000.0 .* 10000.0 ./ Parameters.CC_Fruit .* Parameters.FtS
 
   return Sim
 end
@@ -313,19 +314,14 @@ dynacof_i!(i:(i+10),Sim,Meteo,Parameters)
 """
 function dynacof_i!(i,Sim::DataFrame,Met_c::DataFrame,Parameters)
  
-  # Search for the species specific tree function:
-  if Parameters.Tree_Species == "No_Shade"
-    tree_model! = No_Shade
-  else
-    tree_model! = Shade_Tree
-  end
-
   p = Progress(length(i),1)
 
   for j in collect(i)
     next!(p)
     # Shade Tree computation if any
-    tree_model!(Sim,Parameters,Met_c,j)
+    if Sim.Stocking_Tree[i] > 0.0
+      tree_model!(Sim,Parameters,Met_c,i)
+    end
     # Should output at least APAR_Tree, LAI_Tree, T_Tree, Rn_Tree, H_Tree, LE_Tree (sum of transpiration + leaf evap)
     coffee_model!(Sim,Parameters,Met_c,j)
     soil_model!(Sim,Parameters,Met_c,j)
