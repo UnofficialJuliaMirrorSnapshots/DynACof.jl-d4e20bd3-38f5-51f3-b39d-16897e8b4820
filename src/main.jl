@@ -135,7 +135,7 @@ Return a three objects Sim, Meteo and Parameters. To get the objects from a dyna
 |                              | E_Soil                 | mm                  | Soil evaporation                                                                    |
 |                              | ETR                    | mm                  | System evapotranspiration                                                           |
 |                              | SoilWaterPot           | MPa                 | Soil water potential                                                                |
-|                              | LeafWaterPotential     | Mpa                 | Coffee leaf water potential                                                         |
+|                              | PSIL_*                 | Mpa                 | Coffee leaf water potential                                                         |
 | Special shade tree variables | LA_Tree                | m2 leaves tree-1    | shade tree leaf area                                                                |
 |                              | Crown_H_Tree           | m                   | Crown height                                                                        |
 |                              | Trunk_H_Tree           | m                   | Trunk height                                                                        |
@@ -259,14 +259,13 @@ function mainfun(cy,Direction,Meteo,Parameters)
 
   for i in 1:length(Sim.LAI)
     next!(p)
+
+    energy_water_models!(Sim,Parameters,Met_c,i) # the soil is in here also
     # Shade Tree computation if any
     if Sim.Stocking_Tree[i] > 0.0
       tree_model!(Sim,Parameters,Met_c,i)
     end
-    # Should output at least APAR_Tree, LAI_Tree, T_Tree, Rn_Tree, H_Tree, LE_Tree (sum of transpiration + leaf evap)
     coffee_model!(Sim,Parameters,Met_c,i)
-    soil_model!(Sim,Parameters,Met_c,i)
-    balance_model!(Sim,Parameters,Met_c,i) # Energy balance
   end
 
   Sim[!,:date] .= Met_c.Date
@@ -318,14 +317,16 @@ function dynacof_i!(i,Sim::DataFrame,Met_c::DataFrame,Parameters)
 
   for j in collect(i)
     next!(p)
+    energy_water_models!(Sim,Parameters,Met_c,j) # the soil is in here also
     # Shade Tree computation if any
     if Sim.Stocking_Tree[j] > 0.0
       tree_model!(Sim,Parameters,Met_c,j)
     end
     # Should output at least APAR_Tree, LAI_Tree, T_Tree, Rn_Tree, H_Tree, LE_Tree (sum of transpiration + leaf evap)
     coffee_model!(Sim,Parameters,Met_c,j)
-    soil_model!(Sim,Parameters,Met_c,j)
-    balance_model!(Sim,Parameters,Met_c,j) # Energy balance
   end
 
+  Sim[!,:date] .= Met_c.Date
+  Sim[!,:year] .= Met_c.year
+  Sim[!,:Yield_green] .= Sim.Harvest_Fruit ./ 1000.0 .* 10000.0 ./ Parameters.CC_Fruit .* Parameters.FtS
 end

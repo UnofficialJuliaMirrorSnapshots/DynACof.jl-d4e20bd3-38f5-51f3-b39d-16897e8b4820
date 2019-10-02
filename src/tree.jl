@@ -24,43 +24,10 @@ function tree_model!(Sim,Parameters,Met_c,i)
     # Should output at least APAR_Tree, LAI_Tree, T_Tree, Rn_Tree, H_Tree,
     # LE_Tree (sum of transpiration + leaf evap)
     # And via allometries: Height_Tree for canopy boundary layer conductance
-  
-    Sim.LAI_Tree[i]= Sim.DM_Leaf_Tree[previous_i(i)] * (Parameters.SLA_Tree / 1000.0)
-
     # Metamodel for kdif and kdir
-    Base.invokelatest(Parameters.k, Sim,Met_c,i)
-  
-    Sim.APAR_Dif_Tree[i]= (Met_c.PAR[i] * Met_c.FDiff[i]) * (1.0-exp(-Sim.K_Dif_Tree[i] * Sim.LAI_Tree[i]))
-    Sim.APAR_Dir_Tree[i]= (Met_c.PAR[i]*(1-Met_c.FDiff[i])) * (1.0-exp(-Sim.K_Dir_Tree[i]*Sim.LAI_Tree[i]))
-  
-    Sim.APAR_Tree[i]= max(0.0,Sim.APAR_Dir_Tree[i]+Sim.APAR_Dif_Tree[i])
-  
-    Sim.Transmittance_Tree[i]= 1.0 - (Sim.APAR_Tree[i]/Met_c.PAR[i])
-    if abs(Sim.Transmittance_Tree[i])==Inf
-        Sim.Transmittance_Tree[i]= 1.0
-    end
-  
-    # Calling the metamodels for LUE, Transpiration and sensible heat flux :
-    Base.invokelatest(Parameters.metamodels_tree,Sim,Met_c,i)
-    # Computing the air temperature in the shade tree layer:
-    Sim.TairCanopy_Tree[i]=
-      Met_c.Tair[i] + (Sim.H_Tree[i] * Parameters.MJ_to_W) /
-      (air_density(Met_c.Tair[i],Met_c.Pressure[i] / 10.0) * Parameters.cp *
-         G_bulk(Wind= Met_c.WindSpeed[i], ZHT= Parameters.ZHT,
-                LAI= Sim.LAI_Tree[i],
-                extwind= Parameters.extwind,
-                Z_top= Sim.Height_Tree[previous_i(i)]))
-    # NB : using WindSpeed because wind extinction is already computed in G_bulk (until top of canopy).
-  
-    Sim.Tleaf_Tree[i]=
-      Sim.TairCanopy_Tree[i] + (Sim.H_Tree[i]*Parameters.MJ_to_W) /
-      (air_density(Met_c.Tair[i],Met_c.Pressure[i] / 10.0) * Parameters.cp *
-         Gb_h(Wind = Met_c.WindSpeed[i], wleaf= Parameters.wleaf_Tree,
-              LAI_lay= Sim.LAI_Tree[i],
-              LAI_abv= 0,ZHT = Parameters.ZHT,
-              Z_top = Sim.Height_Tree[previous_i(i)],
-              extwind= Parameters.extwind))
-              
+    n_i= nrow(Sim)
+    Sim.lue_Tree[i]= Base.invokelatest(Parameters.lue_Tree,Sim,Met_c,i)
+
     Sim.GPP_Tree[i]= Sim.lue_Tree[i] * Sim.APAR_Tree[i]
   
     # Tree Thinning threshold when Transmittance <=Parameters.ThinThresh:
@@ -262,7 +229,11 @@ function tree_model!(Sim,Parameters,Met_c,i)
     # Daily C balance that should be nil every day:
     Sim.Cbalance_Tree[i]= Sim.Supply_Total_Tree[i] - (Sim.NPP_Tree[i] + Sim.Rg_Tree[i])
     
-    # Allometries ------------------------------------------------------------
+    # Allometries -------------------------------------------------------------
     Base.invokelatest(Parameters.Allometries,Sim,Met_c,Parameters,i)
-    Sim.LAIplot[i]= Sim.LAIplot[i] + Sim.LAI_Tree[i]
+
+    # Computing LAI for next day based on the DM ------------------------------
+    Sim.LAI_Tree[min(i+1,n_i)]= Sim.DM_Leaf_Tree[i] * (Parameters.SLA_Tree / 1000.0)
+    Sim.LAIplot[min(i+1,n_i)]= Sim.LAIplot[min(i+1,n_i)] + Sim.LAI_Tree[min(i+1,n_i)]
+    Sim.Height_Canopy[min(i+1,n_i)]= max(Sim.Height_Tree[i], Parameters.Height_Coffee)  
 end  

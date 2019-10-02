@@ -10,7 +10,6 @@ Initialise model variables.
 function initialise!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:LAI] .= 0.0
     Sim[!,:LAIplot] .= 0.0
-    Sim[!,:Height_Canopy] .= 0.0
     #Leaf Area per Plant location, to convert per ha using density,cannot be zero at beginning,
     # otherwise, GPP does not start and nothing grows
     Sim[!,:PAR_Trans] .= 0.0
@@ -24,7 +23,7 @@ function initialise!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:CM_FRoot] .= 0.0
     Sim[!,:CM_Shoot] .= 0.0
     Sim[!,:CM_Leaf] .= 1.0
-  
+    Sim[!,:Height_Canopy] .= 1.0
     Sim[!,:DM_Leaf] .= 0.0
     Sim[!,:DM_FRoot] .= 0.0
     Sim[!,:DM_Shoot] .= 0.0
@@ -44,10 +43,10 @@ function initialise!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:Alloc_Fruit_Cohort] .= 0.0
     Sim[!,:NPP_Fruit_Cohort] .= 0.0
     Sim[!,:CM_Fruit_Cohort] .= 0.0
+    Sim[!,:CM_Fruit_Cohort_remain] .= 0.0
     Sim[!,:Maturation_duration] .= 0.0
     Sim[!,:SC] .= 0.0
     Sim[!,:Temp_cor_Bud] .= 1.0
-  
   
     Sim[!,:Tcan_Diurnal_Cof_deg] .= 0.0
     Sim[!,:NPP_RE] .= 0.0
@@ -134,16 +133,17 @@ function initialise!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:H_tot] .= 0.0
     Sim[!,:LE_tot] .= 0.0
     Sim[!,:Diff_T] .= 0.0
+    Sim[!,:TairCanopy] .= 0.0
     Sim[!,:Tleaf_Coffee] .= 0.0
     Sim[!,:Gb_h] .= 0.0
+    Sim[!,:G_bulk] .= 0.0
     Sim[!,:Gb_air_canopy] .= 0.0
     Sim[!,:air_density] .= 0.0
-    Sim[!,:TairCanopy] .= 0.0
     Sim[!,:APAR_Dif] .= 0.0
     Sim[!,:APAR] .= 0.0
     Sim[!,:PAR_Soil] .= 0.0
     Sim[!,:SoilWaterPot] .= 0.0
-    Sim[!,:LeafWaterPotential] .= 0.0
+    Sim[!,:PSIL] .= 0.0
     Sim[!,:AEu] .= 0.0
     Sim[!,:IntercMax] .= 0.0
     Sim[!,:T_Coffee] .= 0.0
@@ -171,6 +171,10 @@ function initialise!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     else
         Tree_init!(Sim,Met_c,Parameters)
     end
+
+    Sim.LAI[1]= Sim.CM_Leaf[1]  *  Parameters.SLA  /  1000.0  /  Parameters.CC_Leaf
+    Sim.LAIplot[1]= Sim.LAI_Tree[1] + Sim.LAI[1]
+    Sim.Height_Canopy .= Parameters.Height_Coffee
 end
 
 
@@ -190,7 +194,7 @@ function Tree_init_no_shade!(Sim::DataFrame,Met_c::DataFrame)
     Sim[!,:LE_Tree] .= 0.0
     Sim[!,:Height_Tree] .= 0.0
     Sim[!,:TairCanopy_Tree] .= Met_c.Tair
-    Sim[!,:air_density_Tree] .= 0.0
+    Sim[!,:air_density_Tree] .= air_density.(Met_c.Tair, Met_c.Pressure / 10.0)
     Sim[!,:PAR_Trans_Tree] .= 0.0
     Sim[!,:Stocking_Tree] .= 0.0
 end
@@ -210,6 +214,7 @@ function Tree_init!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:Height_Tree] .= 0.0
     Sim.Height_Tree[1]= 0.001 # because G_bulk doesn't allow heights of 0
     Sim[!,:LAI_Tree] .= 0.0
+    Sim.LAI_Tree[1]= Sim.CM_Leaf_Tree[1]  *  Parameters.SLA_Tree  /  1000.0  /  Parameters.CC_Leaf_Tree
     Sim[!,:LA_Tree] .= 0.0
     Sim[!,:DM_Leaf_Tree] .= 0.0
     Sim.DM_Leaf_Tree[1]= Sim.CM_Leaf_Tree[1] / Parameters.CC_Leaf_Tree
@@ -238,9 +243,12 @@ function Tree_init!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:PAR_Trans_Tree] .= 0.0
     Sim[!,:lue_Tree] .= 0.0
     Sim[!,:T_Tree] .= 0.0
+    Sim[!,:PSIL_Tree] .= 0.0
     Sim[!,:H_Tree] .= 0.0
-    Sim[!,:Tleaf_Tree] .= 0.0
+    Sim[!,:TairCanopy_Tree] .= 0.0
     Sim[!,:air_density_Tree] .= 0.0
+    Sim[!,:Tleaf_Tree] .= 0.0
+    Sim[!,:Gb_h_Tree] .= 0.0
     Sim[!,:GPP_Tree] .= 0.0
     Sim[!,:Rm_Leaf_Tree] .= 0.0
     Sim[!,:Rm_CR_Tree] .= 0.0
@@ -301,15 +309,14 @@ function Tree_init!(Sim::DataFrame,Met_c::DataFrame,Parameters)
     Sim[!,:Stocking_Tree] .= Parameters.StockingTree_treeha1 / 10000.0
      
     Sim[!,:TimetoFall_Tree] .= false
-    Sim.TimetoFall_Tree[findall(x -> x in Parameters.Fall_Period_Tree, Met_c.DOY)] .= true
-    Sim.TimetoFall_Tree[Sim.Plot_Age .< 1] .= false
+    Sim.TimetoFall_Tree[findall(x -> x in vcat(Parameters.Fall_Period_Tree...), Met_c.DOY)] .= true
+    Sim.TimetoFall_Tree[Sim.Plot_Age .<= 1] .= false
       
     Sim[!,:TimetoThin_Tree] .= false
-    Sim.TimetoThin_Tree[intersect(findall(x -> x in Parameters.Thin_Age_Tree, Sim.Plot_Age),
-                                  findall(x -> x in Parameters.date_Thin_Tree, Met_c.DOY))] .= true  
+    Sim.TimetoThin_Tree[intersect(findall(x -> x in vcat(Parameters.Thin_Age_Tree), Sim.Plot_Age),
+                                  findall(x -> x in vcat(Parameters.date_Thin_Tree), Met_c.DOY))] .= true  
     Sim[!,:TimetoPrun_Tree] .= false
-    Sim.TimetoPrun_Tree[intersect(findall(x -> x in Parameters.Pruning_Age_Tree, Sim.Plot_Age),
-                                  findall(x -> x in Parameters.D_pruning_Tree, Met_c.DOY))] .= true    
-    Sim[!,:TairCanopy_Tree] .= 0.0
+    Sim.TimetoPrun_Tree[intersect(findall(x -> x in vcat(Parameters.Pruning_Age_Tree), Sim.Plot_Age),
+                                  findall(x -> x in vcat(Parameters.D_pruning_Tree), Met_c.DOY))] .= true    
 end
   

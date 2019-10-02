@@ -102,7 +102,6 @@ Base.@kwdef struct coffee
     SLA::Float64               = 10.97      # Specific Leaf Area (m-2 kg-1 dry mass)
     wleaf::Float64             = 0.068      # Leaf width (m)
     DELM::Float64              = 7.0        # Max leaf carbon demand (gC plant-1 d-1)
-    LAI_max::Float64           = 6.0        # Max measured LAI to compute leaf demand. (measured= 5.56)
     Height_Coffee::Float64     = 2.0        # Average coffee canopy height (m) used for aerodynamic conductance.
     D_pruning::Int64           = 74         # day of year of pruning
     MeanAgePruning::Int64      = 5          # Age of first pruning (year)
@@ -114,7 +113,6 @@ Base.@kwdef struct coffee
     DVG1::Int64                = 105        # Day of year for the beginning of the Vegetative Growing Season
     DVG2::Int64                = 244        # Day of year for the end of the Vegetative Growing Season
     MinTT::Float64             = 10.0       # Minimum temperature threshold (deg C) for degree days computation
-    MaxTT::Float64             = 40.0       # Maximum temperature threshold (deg C) for degree days computation (if any)
     RNL_base::Float64          = 91.2       # Nodes per LAI unit at the reference 20 Celsius degrees following Drinnan & Menzel (1995)
     VF_Flowering::Float64      = 5500.0     # Very first flowering (dd) source: Rodriguez et al. (2001)
     F_buds1::Float64           = 840.0      # Bud development stage 1 (2) source: PhD Louise Meylan p.58.
@@ -194,10 +192,10 @@ Base.@kwdef struct coffee
     # 1 Legume only; 2	bananas and legume only;3	bananas and other plants;
     # 4	fruit and forest tree only; 5	no shade
     CoffeePruning::String      = "tree"     # Coffee pruning management type: tree ; row ; 3 by block ; 4 NULL (no pruning)
-    KTOT::Float64              = 800.0      # soil to leaf hydrolic conducance (mol m-2 s-1 MPa-1)
-    T_Coffee= T_Coffee
-    H_Coffee= H_Coffee
-    lue= lue
+    KTOT::Float64              = 80.0       # soil to leaf hydraulic conductance (mol m-2 s-1 MPa-1)
+    T_Coffee= T_Coffee                      # Metamodel for coffee transpiration
+    H_Coffee= H_Coffee                      # Metamodel for coffee sensible heat
+    lue= lue                                # Metamodel for coffee lue
 end
 
 function CB()
@@ -211,13 +209,6 @@ function CB()
   
     CB_fun= LinearInterpolation(Data_Buds_day.Air_T, Data_Buds_day.T_cor_Flower);
     return CB_fun
-end
-
-
-# Metamodels (or subroutines):
-# Leaf Water Potential (MPa)
-  function LeafWaterPotential(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    0.040730 - 0.005074 * Met_c.VPD[i] - 0.037518 * Sim.PAR_Trans_Tree[i] + 2.676284 * Sim.SoilWaterPot[previous_i(i)]
 end
 
 # Transpiration:
@@ -304,27 +295,32 @@ Base.@kwdef struct tree
     pa_CR_Tree           = 0.21                      # Coarse roots living tissue (fraction)
     pa_Leaf_Tree         = 1.0                       # Leaf living tissue (fraction)
     pa_FRoot_Tree        = 1.0                       # Fine root living tissue (fraction)
-    WoodDensity          = 565.0                    # Potentially used for allometries (ref. value is for Cordia alliodora).
+    WoodDensity          = 565.0                     # Potentially used for allometries (ref. value is for Cordia alliodora).
+    KTOT_Tree            = 80.0                      # soil to leaf hydrolic conducance (mol m-2 s-1 MPa-1)
     k                    = light_extinction_K_Tree   # Light extinction coefficient (modify if needed)
-    metamodels_tree      = metamodels_tree           # Idem for lue transpiration and sensible heat flux using MAESPA metamodels
+    T_Tree               = T_Tree                    # Metamodel for tree transpiration
+    H_Tree               = H_Tree                    # Metamodel for tree sensible heat
+    lue_Tree             = lue_Tree                  # Metamodel for tree lue
     Allometries          = tree_allometries          # Idem for allometric equations (optional any kind of variable can be added here).
 end
 
+function lue_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
+    2.87743 + 0.07595 * Met_c.Tair[i] - 0.03390 * Met_c.VPD[i] - 0.24565*Met_c.PAR[i]
+end
 
-function metamodels_tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    Sim.lue_Tree[i]= 2.87743 + 0.07595 * Met_c.Tair[i] - 0.03390 * Met_c.VPD[i] - 0.24565*Met_c.PAR[i]
-  
-    Sim.T_Tree[i]= -0.2366 + 0.6591 * Sim.APAR_Tree[i] + 0.1324*Sim.LAI_Tree[i]
-    if Sim.T_Tree[i] < 0.0
-        Sim.T_Tree[i]= 0.0
+function T_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
+    T= -0.2366 + 0.6591 * Sim.APAR_Tree[i] + 0.1324*Sim.LAI_Tree[i]
+    if T < 0.0
+        T= 0.0
     end
+    T
+end
 
-    Sim.H_Tree[i]=
-      0.34062 + 0.82001 * Sim.APAR_Dir_Tree[i] + 0.32883 * Sim.APAR_Dif_Tree[i] -
+function H_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
+    0.34062 + 0.82001 * Sim.APAR_Dir_Tree[i] + 0.32883 * Sim.APAR_Dif_Tree[i] -
       0.75801 * Sim.LAI_Tree[i] - 0.57135 * Sim.T_Tree[i] -
       0.03033 * Met_c.VPD[i]
 end
-
 
 function light_extinction_K_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
     # See MAESPA_Validation project, script 4-Aquiares_Metamodels.R

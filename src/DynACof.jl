@@ -25,8 +25,8 @@ export import_parameters
 export constants,site,coffee,soil,tree
 export struct_to_tuple
 export read_param_file
-export CB,LeafWaterPotential,T_Coffee,H_Coffee,lue,Metamodels_soil
-export light_extinction_K_Tree,tree_allometries,metamodels_tree
+export CB,T_Coffee,H_Coffee,lue,Metamodels_soil
+export light_extinction_K_Tree,tree_allometries,lue_Tree,H_Tree,T_Tree
 # initialization
 export initialise!
 # Conductances
@@ -35,9 +35,17 @@ export GetWind,G_bulk,Gb_h,G_soilcan,G_interlay
 export ALS
 # Main functions:
 export meteorology
-export dynacof, mainfun, tree_model!, soil_model!, coffee_model!,balance_model!
+export dynacof, mainfun, tree_model!, soil_model!, coffee_model!,balance_model!, energy_water_models!
+export light_model_coffee!, energy_model_tree!, energy_model_coffee!, bud_init_period!,light_model_tree!
 export dynacof_i!
 
+include("main.jl")
+include("energy_model.jl")
+include("balance.jl")
+include("coffee.jl")
+include("tree.jl")
+include("soil.jl")
+include("diseases.jl")
 include("test.jl")
 include("helpers.jl")
 include("meteo.jl")
@@ -48,11 +56,5 @@ include("import_parameters.jl")
 include("initialization.jl")
 include("conductances.jl")
 include("bud_init.jl")
-include("balance.jl")
-include("coffee.jl")
-include("diseases.jl")
-include("tree.jl")
-include("soil.jl")
-include("main.jl")
 
 end # module

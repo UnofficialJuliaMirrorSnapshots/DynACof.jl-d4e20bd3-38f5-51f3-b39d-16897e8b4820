@@ -10,63 +10,10 @@ Nothing, modify the DataFrame of simulation `Sim` in place. See [`dynacof`](@ref
 
 """
 function coffee_model!(Sim,Parameters,Met_c,i)
-      # CM is in gC m-2soil, so use C content to transform in dry mass
-      Sim.LAI[i]= Sim.CM_Leaf[previous_i(i)]  *  Parameters.SLA  /  1000.0  /  Parameters.CC_Leaf
-      Sim.LAIplot[i]= Sim.LAIplot[i] + Sim.LAI[i]
-      Sim.Height_Canopy[i]= max(Sim.Height_Tree[i], Parameters.Height_Coffee)
 
       # Light interception ------------------------------------------------------
-  
-      Sim.K_Dif[i]= Parameters.k_Dif
-      Sim.K_Dir[i]= Parameters.k_Dir
-  
-      #APAR coffee
-      Sim.PAR_Trans_Tree[i]= Met_c.PAR[i] - Sim.APAR_Tree[i] # PAR above coffee layer
-      Sim.APAR_Dif[i]= max(0.0, (Sim.PAR_Trans_Tree[i] * Met_c.FDiff[i]) * (1.0 - exp(-Sim.K_Dif[i] * Sim.LAI[i])))
-      APAR_Dir= max(0.0,(Sim.PAR_Trans_Tree[i] * (1.0 - Met_c.FDiff[i])) * (1.0 - exp(-Sim.K_Dir[i] * Sim.LAI[i])))
-      # APAR_Dir is not part of Sim because it can be easily computed by Met_c.PARm2d1-Sim.APAR_Dif
-      Sim.APAR[i]= APAR_Dir + Sim.APAR_Dif[i]
-      Sim.PAR_Trans[i]= Sim.PAR_Trans_Tree[i] - Sim.APAR[i] # PAR above soil layer
-  
-      # soil (+canopy evap) water balance ---------------------------------------
-  
-      # Transpiration Coffee
-      Sim.T_Coffee[i]= Base.invokelatest(Parameters.T_Coffee,Sim,Met_c,i)
-      # Sensible heat Coffee
-      Sim.H_Coffee[i]= Base.invokelatest(Parameters.H_Coffee,Sim,Met_c,i)
+      n_i= nrow(Sim)
 
-      Sim.LeafWaterPotential[i]= Sim.SoilWaterPot[previous_i(i)] - (Sim.T_Coffee[i] / Parameters.M_H20) / Parameters.KTOT
-      
-      # Tcanopy Coffee : using bulk conductance if no trees, interlayer conductance if trees
-      # Source: Van de Griend and Van Boxel 1989.
-      if Sim.Height_Tree[i] > Parameters.Height_Coffee
-        Sim.Gb_air_canopy[i]= G_interlay(Wind= Met_c.WindSpeed[i], ZHT = Parameters.ZHT, LAI_top= Sim.LAI_Tree[i], LAI_bot= Sim.LAI[i],
-                                         Z_top= Sim.Height_Canopy[i], extwind = Parameters.extwind)  
-      else
-        Sim.Gb_air_canopy[i]= G_bulk(Wind = Met_c.WindSpeed[i], ZHT = Parameters.ZHT, Z_top = Sim.Height_Canopy[i],
-                                     LAI = Sim.LAI[i], extwind = Parameters.extwind)
-      end
-      
-      Sim.air_density_Tree[i]= air_density(Sim.TairCanopy_Tree[i],Met_c.Pressure[i] / 10.0)
-      Sim.TairCanopy[i]= Sim.TairCanopy_Tree[i] + ((Sim.H_Coffee[i] + Sim.H_Soil[i]) * Parameters.MJ_to_W) / 
-                        (Sim.air_density_Tree[i] *  Parameters.cp * Sim.Gb_air_canopy[i])
-      # NB: if no trees, TairCanopy_Tree= Tair (see initialization.jl)
-      Sim.air_density[i]= air_density(Sim.TairCanopy[i],Met_c.Pressure[i] / 10.0)
-
-      Sim.Gb_h[i]= Gb_h(Wind = Met_c.WindSpeed[i], wleaf= Parameters.wleaf, LAI_lay=Sim.LAI[i], LAI_abv=Sim.LAI_Tree[i],
-                        ZHT = Parameters.ZHT, Z_top = Sim.Height_Canopy[i], extwind= Parameters.extwind)
-
-      Sim.Tleaf_Coffee[i]= Sim.TairCanopy[i]+(Sim.H_Coffee[i] * Parameters.MJ_to_W) / 
-                           (Sim.air_density[i] *  Parameters.cp  * Sim.Gb_h[i])
-      # Recomputing soil temperature knowing TairCanopy
-  
-      Sim.TSoil[i]= Sim.TairCanopy[i]+(Sim.H_Soil[i] * Parameters.MJ_to_W) / 
-        (Sim.air_density[i] *  Parameters.cp * 
-           G_soilcan(Wind= Met_c.WindSpeed[i], ZHT=Parameters.ZHT, Z_top= max(Sim.Height_Tree[i], Parameters.Height_Coffee),
-                     LAI = Sim.LAI_Tree[i] + Sim.LAI[i], extwind= Parameters.extwind))
-  
-      Sim.DegreeDays_Tcan[i]= GDD(Sim.TairCanopy[i], Parameters.MinTT, Parameters.MaxTT)
-      
       # Metamodel LUE coffee:
       Sim.lue[i]= Base.invokelatest(Parameters.lue,Sim,Met_c,i)
   
@@ -188,7 +135,7 @@ function coffee_model!(Sim,Parameters,Met_c,i)
       Sim.Temp_cor_Bud[i]= Base.invokelatest(Parameters.Bud_T_correction)(Sim.Tleaf_Coffee[i])
       
       # (7) Bud dormancy break, Source, Drinnan 1992 and Rodriguez et al., 2011 eq. 13
-      Sim.pbreak[i]= 1.0 / (1.0 + exp(Parameters.a_p + Parameters.b_p * Sim.LeafWaterPotential[i]))
+      Sim.pbreak[i]= 1.0 / (1.0 + exp(Parameters.a_p + Parameters.b_p * Sim.PSIL[i]))
       # (8) Compute the number of buds that effectively break dormancy in each cohort:
       Sim.BudBreak_cohort[DormancyBreakPeriod] .=
           map(min, Sim.Bud_available[DormancyBreakPeriod], 
@@ -234,8 +181,13 @@ function coffee_model!(Sim,Parameters,Met_c,i)
       Sim.NPP_Fruit_Cohort[FruitingPeriod] .= Sim.Alloc_Fruit_Cohort[FruitingPeriod] ./ Parameters.epsilon_Fruit
       Sim.CM_Fruit_Cohort[FruitingPeriod] .= Sim.CM_Fruit_Cohort[FruitingPeriod] .+ Sim.NPP_Fruit_Cohort[FruitingPeriod]
       Sim.DM_Fruit_Cohort[FruitingPeriod] .= Sim.CM_Fruit_Cohort[FruitingPeriod] ./ Parameters.CC_Fruit
+      # Using CM_Fruit_Cohort_remain to keep track of the fruit mass that is created, but it is updated by removing the overriped 
+      # fruits then, so the overriped fruits can only be removed once.   
+      Sim.CM_Fruit_Cohort_remain[FruitingPeriod] .= Sim.CM_Fruit_Cohort_remain[FruitingPeriod]  .+ Sim.NPP_Fruit_Cohort[FruitingPeriod]
       # Overriped fruits that fall onto the ground (= to mass of the cohort that overripe) :
-      Sim.Overriped_Fruit[i]= Sim.CM_Fruit_Cohort[max(minimum(FruitingPeriod) - 1, 1)]
+      overriped_day= max(minimum(FruitingPeriod) - 1, 1)
+      Sim.Overriped_Fruit[i]= sum(Sim.CM_Fruit_Cohort_remain[previous_i.(overriped_day,0:10)])
+      Sim.CM_Fruit_Cohort_remain[previous_i.(overriped_day,0:10)] .= 0.0
       # Sim.Overriped_Fruit[i]= Sim.CM_Fruit_Cohort[minimum(FruitingPeriod)-1.0] * Parameters.epsilon_Fruit
       # Duration of the maturation of each cohort born in the ith day (in days):
       Sim.Maturation_duration[FruitingPeriod] .= 1:length(FruitingPeriod)
@@ -267,10 +219,12 @@ function coffee_model!(Sim,Parameters,Met_c,i)
         # This option is the best one when fruit maturation is not well known or when the
         # harvest is made throughout several days or weeks with the assumption that fruits
         # are harvested when mature.
-      else
+      elseif Parameters.harvest == "quality"
         is_harvest= (Sim.Plot_Age[i]>=Parameters.ageMaturity) &
                     (mean(Sim.Harvest_Maturity_Pot[previous_i.(i,0:9)]) < mean(Sim.Harvest_Maturity_Pot[previous_i.(i,10:19)]))
         # Made as soon as the overall fruit maturation is optimal (all fruits are mature)
+      else
+        is_harvest= false
       end
   
       if is_harvest
@@ -281,7 +235,8 @@ function coffee_model!(Sim,Parameters,Met_c,i)
         Sim.CM_Fruit[i-1]= 0.0
         Sim.NPP_Fruit[i]= 0.0
         Sim.Overriped_Fruit[i]= 0.0
-        Sim.CM_Fruit_Cohort .= zeros(nrow(Sim))
+        Sim.CM_Fruit_Cohort .= zeros(n_i)
+        Sim.CM_Fruit_Cohort_remain .= zeros(n_i)
         # RV: could harvest mature fruits only (To do).
       else
         Sim.Harvest_Fruit[i]= 0.0
@@ -291,8 +246,7 @@ function coffee_model!(Sim,Parameters,Met_c,i)
   
       Sim.Supply_Leaf[i]= Parameters.lambda_Leaf_remain * (Sim.Supply[i] - Sim.Alloc_Fruit[i] - Sim.Alloc_Shoot[i] - Sim.Alloc_SCR[i])
   
-      Sim.Alloc_Leaf[i]= min(Parameters.DELM * (Parameters.Stocking_Coffee / 10000.0) * ((Parameters.LAI_max - Sim.LAI[i]) /
-                              (Sim.LAI[i] + Parameters.LAI_max)), 
+      Sim.Alloc_Leaf[i]= min(Parameters.DELM * (Parameters.Stocking_Coffee / 10000.0), 
                              Sim.Supply_Leaf[i])
   
       Sim.NPP_Leaf[i]= Sim.Alloc_Leaf[i] / Parameters.epsilon_Leaf
@@ -329,7 +283,7 @@ function coffee_model!(Sim,Parameters,Met_c,i)
                       Sim.Carbon_Lack_Mortality[i] * Sim.CM_Leaf[previous_i(i)] / CM_tot
       Sim.CM_Shoot[i]= Sim.CM_Shoot[previous_i(i)] + Sim.NPP_Shoot[i]-Sim.Mortality_Shoot[i] -
                        Sim.Carbon_Lack_Mortality[i] * Sim.CM_Shoot[previous_i(i)] / CM_tot
-      Sim.CM_Fruit[i]= Sim.CM_Fruit[previous_i(i)]+ Sim.NPP_Fruit[i] - Sim.Overriped_Fruit[i]
+      Sim.CM_Fruit[i]= Sim.CM_Fruit[previous_i(i)] + Sim.NPP_Fruit[i] - Sim.Overriped_Fruit[i]
       Sim.CM_SCR[i]= Sim.CM_SCR[previous_i(i)] + Sim.NPP_SCR[i] - Sim.Mortality_SCR[i] -
                      Sim.Carbon_Lack_Mortality[i] * Sim.CM_SCR[previous_i(i)] / CM_tot
       Sim.CM_FRoot[i]= Sim.CM_FRoot[previous_i(i)] + Sim.NPP_FRoot[i] - Sim.Mortality_FRoot[i] -
@@ -348,4 +302,9 @@ function coffee_model!(Sim,Parameters,Met_c,i)
       Sim.Rg[i]= Sim.Rg_Fruit[i] + Sim.Rg_Leaf[i] + Sim.Rg_Shoot[i]+Sim.Rg_SCR[i] + Sim.Rg_FRoot[i]
       Sim.Ra[i]=Sim.Rm[i] + Sim.Rg[i]
       Sim.NPP[i]= Sim.NPP_Shoot[i] + Sim.NPP_SCR[i] + Sim.NPP_Fruit[i] + Sim.NPP_Leaf[i] + Sim.NPP_FRoot[i]  
+
+      # Compute LAI for the day after based on the CM of this day ---------------
+      # CM is in gC m-2soil, so use C content to transform in dry mass
+      Sim.LAI[min(i+1,n_i)]= Sim.CM_Leaf[i]  *  Parameters.SLA  /  1000.0  /  Parameters.CC_Leaf
+      Sim.LAIplot[min(i+1,n_i)]= Sim.LAIplot[min(i+1,n_i)] + Sim.LAI[min(i+1,n_i)]
 end
