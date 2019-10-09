@@ -92,7 +92,8 @@ Base.@kwdef struct soil
 end
 
 function Metamodels_soil(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    Sim.Rn_Soil[i]= -1.102 + 1.597 * Sim.PAR_Trans[i] + 1.391 * sqrt(1.0 - Met_c.FDiff[i])
+    # -1.07535639  +  1.70234797 * Sim.PAR_Trans[i] +  0.05094017 * Met_c.VPD[i]
+    -1.050189  +  1.766872 * Sim.PAR_Trans[i] 
 end
 
 Base.@kwdef struct coffee
@@ -101,14 +102,14 @@ Base.@kwdef struct coffee
     AgeCoffeeMax::Int64        = 40         # maximum coffee stand age (start a new rotation after)
     SLA::Float64               = 10.97      # Specific Leaf Area (m-2 kg-1 dry mass)
     wleaf::Float64             = 0.068      # Leaf width (m)
-    DELM::Float64              = 7.0        # Max leaf carbon demand (gC plant-1 d-1)
+    DELM::Float64              = 2.0        # Max leaf carbon demand (gC plant-1 d-1)
     Height_Coffee::Float64     = 2.0        # Average coffee canopy height (m) used for aerodynamic conductance.
     D_pruning::Int64           = 74         # day of year of pruning
     MeanAgePruning::Int64      = 5          # Age of first pruning (year)
     LeafPruningRate::Float64   = 0.6        # how much leaves are pruned (ratio)
     WoodPruningRate::Float64   = 1.0/3.0    # how much branches wood are pruned (ratio)
-    k_Dif::Float64             = 0.4289     # Light extinction coefficient for diffuse light (-) computed from MAESPA
-    k_Dir::Float64             = 0.3579     # Light extinction coefficient for direct light (-) computed from MAESPA
+    k_Dif::Float64             = 0.3905968  # Light extinction coefficient for diffuse light (-) computed from MAESPA
+    k_Dir::Float64             = 0.3409511  # Light extinction coefficient for direct light (-) computed from MAESPA
     kres::Float64              = 0.08       # Maximum carbon proportion extracted from reserves mass per day
     DVG1::Int64                = 105        # Day of year for the beginning of the Vegetative Growing Season
     DVG2::Int64                = 244        # Day of year for the end of the Vegetative Growing Season
@@ -213,7 +214,7 @@ end
 
 # Transpiration:
 function T_Coffee(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    T_Cof= -0.72080 + 0.07319 * Met_c.VPD[i] -0.76984 * (1.0-Met_c.FDiff[i]) + 0.13646*Sim.LAI[i] + 0.12910*Sim.PAR_Trans_Tree[i]
+    T_Cof = -0.82327839 + 0.03089959 * Met_c.Tair[i] + 0.15777166 * Sim.APAR[i] + 0.07297392 * Met_c.VPD[i]
     if T_Cof<0.0
         T_Cof= 0.0
     end
@@ -222,16 +223,14 @@ end
 
 # Sensible heat flux:
 function H_Coffee(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    1.2560 - 0.2886*Met_c.VPD[i] - 3.6280*Met_c.FDiff[i] + 2.6480*Sim.T_Coffee[i] + 0.4389*Sim.PAR_Trans_Tree[i]
+    # 1.3377959 - 0.1197404 * Met_c.Tair[i] + 0.5623476 * Sim.PAR_Trans_Tree[i] - 0.3077488 * Met_c.VPD[i] + 2.9021295 * Sim.T_Coffee[i]
+    -0.7678758  +  0.5461716 * Sim.PAR_Trans_Tree[i] -  0.3207445 * Met_c.VPD[i] +  2.6837429 * Sim.T_Coffee[i]
 end
 
 # Light use efficiency:
-function lue(Sim::DataFrame,Met_c::DataFrame,i::Int64)::Float64                       
-2.784288 + 0.009667*Met_c.Tair[i] + 0.010561*Met_c.VPD[i] - 0.710361*sqrt(Sim.PAR_Trans_Tree[i])
+function lue(Sim::DataFrame,Met_c::DataFrame,i::Int64)::Float64
+    2.77258689  +  0.01034341 * Met_c.Tair[i] -  0.71823829 * sqrt(Sim.PAR_Trans_Tree[i]) +  0.01537693 * Met_c.VPD[i]
 end
-
-
-
 
 
 Base.@kwdef struct tree
@@ -255,7 +254,7 @@ Base.@kwdef struct tree
     # k_Dif_Tree           = 0.305                   # Light extinction coefficient for diffuse light. Now computed by metamodels
     # k_Dir_Tree           = 0.304                   # Light extinction coefficient for direct light. Now computed by metamodels
     # lue_Tree             = 1.1375                  # Light-use efficiency (gc MJ-1). Now computed by metamodels
-    lambda_Stem_Tree     = 0.20                      # Allocation coefficient to the stem. Source: Litton (2007)
+    lambda_Stem_Tree     = 0.21                      # Allocation coefficient to the stem. Source: Litton (2007)
     lambda_Branch_Tree   = 0.25                      # Allocation coefficient to the branches wood. Source: Litton (2007)
     lambda_CR_Tree       = 0.10                      # Allocation coefficient to the coarse roots. Source: Litton (2007)
     lambda_Leaf_Tree     = 0.26                      # Allocation coefficient to the Leaves. Source: Litton (2007)
@@ -305,29 +304,28 @@ Base.@kwdef struct tree
 end
 
 function lue_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    2.87743 + 0.07595 * Met_c.Tair[i] - 0.03390 * Met_c.VPD[i] - 0.24565*Met_c.PAR[i]
+    2.91332985 + 0.07195458 * Met_c.Tair[i] - 0.03124228 * Met_c.VPD[i] - 0.24092238 * Met_c.PAR[i]
 end
 
 function T_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    T= -0.2366 + 0.6591 * Sim.APAR_Tree[i] + 0.1324*Sim.LAI_Tree[i]
-    if T < 0.0
-        T= 0.0
+    Transp= -0.55231394 + 0.01798136 * Met_c.Tair[i] + 0.02229318 * Met_c.VPD[i] + 0.16053935 * Sim.LAI_Tree[i] + 0.48838455 * Sim.APAR_Tree[i]
+    if Transp < 0.0
+        Transp= 0.0
     end
-    T
+    Transp
 end
 
 function H_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
-    0.34062 + 0.82001 * Sim.APAR_Dir_Tree[i] + 0.32883 * Sim.APAR_Dif_Tree[i] -
-      0.75801 * Sim.LAI_Tree[i] - 0.57135 * Sim.T_Tree[i] -
-      0.03033 * Met_c.VPD[i]
+    0.19869391  +  0.70967904 * Sim.APAR_Tree[i] -  0.78428282 * Sim.LAI_Tree[i] -  0.68444250 * Sim.T_Tree[i] -  0.03157318 * Met_c.VPD[i] +
+      0.06780685 * Met_c.WindSpeed[i]
 end
 
 function light_extinction_K_Tree(Sim::DataFrame,Met_c::DataFrame,i::Int64)
     # See MAESPA_Validation project, script 4-Aquiares_Metamodels.R
     # Source for non-constant k: Sinoquet et al. 2007
     # DOI: 10.1111/j.1469-8137.2007.02088.x
-    Sim.K_Dif_Tree[i]= 0.6161 - 0.5354 * Sim.LAD_Tree[previous_i(i,1)]
-    Sim.K_Dir_Tree[i]= 0.4721 - 0.3973 * Sim.LAD_Tree[previous_i(i,1)]
+    Sim.K_Dif_Tree[i]= 0.6146417 - 0.5321444 * Sim.LAD_Tree[previous_i(i,1)]
+    Sim.K_Dir_Tree[i]= 0.4754740 - 0.4015379 * Sim.LAD_Tree[previous_i(i,1)]
 end
 
 function tree_allometries(Sim::DataFrame,Met_c::DataFrame,Parameters,i::Int64)
